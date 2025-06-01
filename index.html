@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calculadora de Subredes</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-content">
+        <h1><i class="fas fa-network-wired"></i> Calculadora de diseño lógico de red</h1>
+        <p class="subtitle">Herramienta profesional para el cálculo y diseño de subredes</p>
+      </div>
+      
+      <!-- Toggle de modo oscuro -->
+      <div class="theme-toggle">
+        <input type="checkbox" id="darkModeToggle" class="theme-toggle-input">
+        <label for="darkModeToggle" class="theme-toggle-label">
+          <i class="fas fa-sun sun-icon"></i>
+          <i class="fas fa-moon moon-icon"></i>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </header>
+
+    <main>
+      <div class="form-container">
+        <form id="subnetForm" class="modern-form">
+          <div class="input-group">
+            <label for="ip">
+              <i class="fas fa-globe"></i>
+              IP base
+            </label>
+            <input type="text" id="ip" placeholder="192.168.10.0" required />
+          </div>
+
+          <div class="input-group">
+            <label for="mask">
+              <i class="fas fa-shield-alt"></i>
+              Máscara inicial
+            </label>
+            <input type="text" id="mask" placeholder="/24 o 255.255.255.0" required />
+          </div>
+
+          <fieldset class="device-fieldset">
+            <legend>
+              <i class="fas fa-devices"></i>
+              Tipos de dispositivos en esta subred
+            </legend>
+
+            <div id="deviceList" class="device-list">
+              <div class="deviceRow">
+                <div class="device-input-group">
+                  <input type="text" class="dtype" placeholder="Tipo (PC, impresora…)" required />
+                  <input type="number" class="dqty" placeholder="Cantidad" min="1" required />
+                  <button type="button" class="remove-device" style="display: none;">
+                    <i class="fas fa-trash"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <button type="button" id="addDevice" class="add-device-btn">
+              <i class="fas fa-plus"></i>
+              Añadir tipo de dispositivo
+            </button>
+          </fieldset>
+
+          <button type="submit" class="calculate-btn">
+            <i class="fas fa-calculator"></i>
+            Calcular subredes
+          </button>
+        </form>
+      </div>
+
+      <section id="result" class="result-section"></section>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
