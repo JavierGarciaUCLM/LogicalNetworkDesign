@@ -1,7 +1,7 @@
 const i18n = {
   es: {
     title: 'Logical Network Design Calculator',
-    subtitle: 'Herramienta profesional para el cálculo y diseño de subredes',
+    subtitle: 'Una pequeña ayuda para Redes',
     ipLabel: 'IP base',
     maskLabel: 'Máscara inicial',
     deviceLegend: 'Tipos de dispositivos en esta subred',
@@ -31,17 +31,11 @@ const i18n = {
     subnetsCreated: 'subredes creadas',
     sameNetmask: 'subredes con misma máscara',
     deviceType: 'Tipo (PC, impresora…)',
-    quantity: 'Cantidad',
-    subnet: 'Subred',
-    network: 'Red',
-    mask: 'Máscara',
-    broadcast: 'Broadcast',
-    range: 'Rango',
-    needed: 'Necesarios',
+    quantity: 'Cantidad'
   },
   en: {
     title: 'Logical Network Design Calculator',
-    subtitle: 'Professional tool for subnet calculation and design',
+    subtitle: 'Small help for Redes',
     ipLabel: 'Base IP',
     maskLabel: 'Initial mask',
     deviceLegend: 'Device types in this subnet',
@@ -71,13 +65,7 @@ const i18n = {
     subnetsCreated: 'subnets created',
     sameNetmask: 'subnets with same netmask',
     deviceType: 'Device type (PC, printer…)',
-    quantity: 'Quantity',
-    subnet: 'Subnet',
-    network: 'Network',
-    mask: 'Netmask',
-    broadcast: 'Broadcast',
-    range: 'Range',
-    needed: 'Needed'
+    quantity: 'Quantity'
   }
 };
 
@@ -85,6 +73,7 @@ class LanguageManager {
   constructor() {
     this.langToggle = document.getElementById('langToggle');
     this.currentLang = this.detectInitialLang();
+    this.calculatorInstance = null; // Para poder actualizar resultados, es para el error que tenái con la subpantalla
     this.applyLang(this.currentLang);
 
     if (this.langToggle) {
@@ -94,8 +83,15 @@ class LanguageManager {
         const newLang = this.langToggle.checked ? 'en' : 'es';
         this.applyLang(newLang);
         localStorage.setItem('lang', newLang);
+        if (this.calculatorInstance && this.calculatorInstance.lastResults) {
+          this.calculatorInstance.showSubnetResults(this.calculatorInstance.lastResults);
+        }
       });
     }
+  }
+
+  setCalculatorInstance(calculator) {
+    this.calculatorInstance = calculator;
   }
 
   detectInitialLang() {
@@ -187,6 +183,7 @@ class CalculadoraSubred {
     this.addDeviceBtn = document.getElementById('addDevice');
     this.resultSection = document.getElementById('result');
     this.lang = langManager;
+    this.lastResults = null; // Para poder actualizar resultados cuando cambie idioma
     this.init();
   }
 
@@ -223,7 +220,7 @@ class CalculadoraSubred {
     
     this.deviceList.appendChild(deviceRow);
     
-    // Aplicar traducciones a los nuevos elementos
+    //traducciones a los nuevos elementos
     this.lang.applyLang(this.lang.currentLang);
     
     this.updateRemoveButtons();
@@ -532,6 +529,9 @@ class CalculadoraSubred {
         </div>
       </div>
     `;
+    
+    // Guardar los resultados para poder actualizarlos cuando cambie el idioma
+    this.lastResults = data;
   }
 
   getDevicesData() {
@@ -579,7 +579,10 @@ class CalculadoraSubred {
 document.addEventListener('DOMContentLoaded', () => {
   const lang = new LanguageManager();
   new ThemeManager();
-  new CalculadoraSubred(lang);
+  const calculator = new CalculadoraSubred(lang);
+  
+  // Conectar la instancia de la calculadora con el gestor de idioma
+  lang.setCalculatorInstance(calculator);
   
   console.log('🌐 Calculadora de Subredes iniciada correctamente');
 });
