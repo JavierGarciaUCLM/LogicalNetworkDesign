@@ -35,7 +35,7 @@ const i18n = {
   },
   en: {
     title: 'Logical Network Design Calculator',
-    subtitle: 'Small help for Redes',
+    subtitle: 'Little help for Redes',
     ipLabel: 'Base IP',
     maskLabel: 'Initial mask',
     deviceLegend: 'Device types in this subnet',
