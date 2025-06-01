@@ -160,45 +160,25 @@ class CalculadoraSubred {
         return;
       }
 
-      // Calcular total de hosts necesarios
-      const totalDevices = devices.reduce((sum, device) => sum + device.quantity, 0);
-      const hosts = totalDevices;
-
-      // Normalizar máscara (tu lógica)
-      const cidr = maskStr.startsWith('/') ?
+      // Normalizar máscara base
+      const baseCidr = maskStr.startsWith('/') ?
         parseInt(maskStr.slice(1), 10) :
         maskStr.split('.').reduce((c, o) => c + (o === '255' ? 8 : o === '254' ? 7 : o === '252' ? 6 : o === '248' ? 5 : o === '240' ? 4 : o === '224' ? 3 : o === '192' ? 2 : o === '128' ? 1 : 0), 0);
 
-      // Cálculo de nueva máscara
-      const hostsNecesarios = hosts + 2; // +2 para red y broadcast
-      const hostBits = Math.ceil(Math.log2(hostsNecesarios));
-      const nuevaCidr = 32 - hostBits;
-
-      // Validar que la nueva máscara sea válida
-      if (nuevaCidr < 8 || nuevaCidr > 30) {
-        this.showError('Número de hosts demasiado grande o pequeño para calcular una subred válida');
+      // Calcular subredes para cada tipo de dispositivo
+      const subredes = this.calculateSubnets(ipStr, baseCidr, devices);
+      
+      if (subredes.error) {
+        this.showError(subredes.error);
         return;
       }
 
-      const ipInt = this.ipToInt(ipStr);
-      const mascara = this.cidrToMask(nuevaCidr);
-      const red = ipInt & mascara;
-      const broadcast = red | (~mascara >>> 0);
-
       // Mostrar resultados
-      this.showResults({
+      this.showSubnetResults({
         ipOriginal: ipStr,
         mascaraOriginal: maskStr,
-        devices: devices,
-        totalHosts: hosts,
-        hostsNecesarios: hostsNecesarios,
-        nuevaCidr: nuevaCidr,
-        mascaraOptima: this.intToIp(mascara),
-        direccionRed: this.intToIp(red),
-        direccionBroadcast: this.intToIp(broadcast),
-        rangoInicio: this.intToIp(red + 1),
-        rangoFin: this.intToIp(broadcast - 1),
-        hostsDisponibles: Math.pow(2, hostBits) - 2,
+        baseCidr: baseCidr,
+        subredes: subredes,
         calculatedAt: new Date().toLocaleString()
       });
 
@@ -206,6 +186,86 @@ class CalculadoraSubred {
       console.error('Error en el cálculo:', error);
       this.showError('Error en el cálculo. Verifica que la IP y máscara sean válidas.');
     }
+  }
+
+  calculateSubnets(baseIp, baseCidr, devices) {
+    // Ordenar dispositivos por cantidad (de mayor a menor) para optimizar el espacio
+    const sortedDevices = [...devices].sort((a, b) => b.quantity - a.quantity);
+    
+    const baseIpInt = this.ipToInt(baseIp);
+    const baseMask = this.cidrToMask(baseCidr);
+    const baseNetwork = baseIpInt & baseMask;
+    const maxAddressSpace = Math.pow(2, 32 - baseCidr);
+    
+    let currentNetwork = baseNetwork;
+    const subredes = [];
+    let totalUsedSpace = 0;
+    
+    for (const device of sortedDevices) {
+      // Calcular hosts necesarios (cantidad + red + broadcast)
+      const hostsNecesarios = device.quantity + 2;
+      const hostBits = Math.ceil(Math.log2(hostsNecesarios));
+      const subnetCidr = 32 - hostBits;
+      
+      // Validar que la subred sea válida
+      if (subnetCidr < baseCidr || subnetCidr > 30) {
+        return { error: `Subred para ${device.type} requiere demasiados hosts (${device.quantity}) para la red base` };
+      }
+      
+      const subnetMask = this.cidrToMask(subnetCidr);
+      const subnetSize = Math.pow(2, hostBits);
+      
+      // Verificar que hay espacio suficiente
+      if (totalUsedSpace + subnetSize > maxAddressSpace) {
+        return { error: `No hay suficiente espacio en la red base para todas las subredes` };
+      }
+      
+      // Alinear la dirección de red al límite de la subred
+      const alignedNetwork = Math.floor(currentNetwork / subnetSize) * subnetSize;
+      if (alignedNetwork < currentNetwork) {
+        currentNetwork = alignedNetwork + subnetSize;
+      } else {
+        currentNetwork = alignedNetwork;
+      }
+      
+      const broadcast = currentNetwork + subnetSize - 1;
+      const firstHost = currentNetwork + 1;
+      const lastHost = broadcast - 1;
+      
+      subredes.push({
+        tipo: device.type,
+        cantidad: device.quantity,
+        direccionRed: this.intToIp(currentNetwork),
+        mascara: this.intToIp(subnetMask),
+        cidr: subnetCidr,
+        broadcast: this.intToIp(broadcast),
+        primeraIP: this.intToIp(firstHost),
+        ultimaIP: this.intToIp(lastHost),
+        hostsDisponibles: subnetSize - 2,
+        hostsNecesarios: device.quantity,
+        eficiencia: Math.round((device.quantity / (subnetSize - 2)) * 100),
+        tamaño: subnetSize
+      });
+      
+      // Mover al siguiente bloque de direcciones
+      currentNetwork += subnetSize;
+      totalUsedSpace += subnetSize;
+    }
+    
+    // Calcular estadísticas generales
+    const totalDevices = devices.reduce((sum, d) => sum + d.quantity, 0);
+    const totalHosts = subredes.reduce((sum, s) => sum + s.hostsDisponibles, 0);
+    const eficienciaGeneral = Math.round((totalDevices / totalHosts) * 100);
+    
+    return {
+      subredes,
+      totalDevices,
+      totalHosts,
+      totalUsedSpace,
+      availableSpace: maxAddressSpace - totalUsedSpace,
+      eficienciaGeneral,
+      espacioUtilizado: Math.round((totalUsedSpace / maxAddressSpace) * 100)
+    };
   }
 
   getDevicesData() {
@@ -224,51 +284,105 @@ class CalculadoraSubred {
     return devices;
   }
 
-  showResults(data) {
+  showSubnetResults(data) {
+    const subnetCards = data.subredes.map((subnet, index) => `
+      <div class="subnet-card ${this.getSubnetEfficiencyClass(subnet.eficiencia)}">
+        <div class="subnet-header">
+          <h4>
+            <i class="fas fa-sitemap"></i>
+            Subred ${index + 1}: ${subnet.tipo}
+          </h4>
+          <div class="efficiency-badge">
+            ${subnet.eficiencia}% eficiencia
+          </div>
+        </div>
+        
+        <div class="subnet-details">
+          <div class="subnet-row">
+            <span class="label"><i class="fas fa-network-wired"></i> Red:</span>
+            <code class="network-addr">${subnet.direccionRed}/${subnet.cidr}</code>
+          </div>
+          
+          <div class="subnet-row">
+            <span class="label"><i class="fas fa-shield-alt"></i> Máscara:</span>
+            <code>${subnet.mascara}</code>
+          </div>
+          
+          <div class="subnet-row">
+            <span class="label"><i class="fas fa-broadcast-tower"></i> Broadcast:</span>
+            <code>${subnet.broadcast}</code>
+          </div>
+          
+          <div class="subnet-row range-row">
+            <span class="label"><i class="fas fa-arrows-alt-h"></i> Rango:</span>
+            <div class="ip-range-inline">
+              <code class="ip-start">${subnet.primeraIP}</code>
+              <span class="range-separator">→</span>
+              <code class="ip-end">${subnet.ultimaIP}</code>
+            </div>
+          </div>
+          
+          <div class="subnet-stats">
+            <div class="stat">
+              <div class="stat-value">${subnet.cantidad}</div>
+              <div class="stat-label">Necesarios</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">${subnet.hostsDisponibles}</div>
+              <div class="stat-label">Disponibles</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">${subnet.tamaño}</div>
+              <div class="stat-label">Tamaño Total</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
     this.resultSection.innerHTML = `
       <div class="results-content">
-        <h3><i class="fas fa-network-wired"></i> Resultados del Cálculo de Subredes</h3>
+        <h3><i class="fas fa-project-diagram"></i> Diseño de Subredes por Dispositivo</h3>
         
-        <div class="result-grid">
-          <div class="result-item result-summary">
-            <strong><i class="fas fa-info-circle"></i> Resumen</strong>
-            <div class="summary-content">
-              <p><strong>IP original:</strong> ${data.ipOriginal}</p>
-              <p><strong>Máscara original:</strong> ${data.mascaraOriginal}</p>
-              <p><strong>Total dispositivos:</strong> ${data.totalHosts}</p>
+        <div class="summary-stats">
+          <div class="summary-card">
+            <div class="summary-icon">
+              <i class="fas fa-info-circle"></i>
+            </div>
+            <div class="summary-info">
+              <h4>Red Base</h4>
+              <p><strong>${data.ipOriginal}${data.mascaraOriginal}</strong></p>
+              <small>${data.subredes.length} subredes creadas</small>
             </div>
           </div>
-
-          <div class="result-item result-devices">
-            <strong><i class="fas fa-devices"></i> Dispositivos por tipo</strong>
-            <ul class="devices-list">
-              ${data.devices.map(d => `<li><span class="device-count">${d.quantity}</span> ${d.type}</li>`).join('')}
-            </ul>
-          </div>
-
-          <div class="result-item result-network">
-            <strong><i class="fas fa-globe"></i> Configuración de Red Óptima</strong>
-            <div class="network-config">
-              <p><strong>Máscara óptima:</strong> <code>/${data.nuevaCidr}</code> <span class="mask-decimal">(${data.mascaraOptima})</span></p>
-              <p><strong>Dirección de red:</strong> <code>${data.direccionRed}</code></p>
-              <p><strong>Dirección de broadcast:</strong> <code>${data.direccionBroadcast}</code></p>
+          
+          <div class="summary-card">
+            <div class="summary-icon">
+              <i class="fas fa-devices"></i>
+            </div>
+            <div class="summary-info">
+              <h4>Dispositivos</h4>
+              <p><strong>${data.subredes.totalDevices}</strong> total</p>
+              <small>${data.subredes.totalHosts} IPs disponibles</small>
             </div>
           </div>
-
-          <div class="result-item result-range">
-            <strong><i class="fas fa-ethernet"></i> Rango de IPs Utilizables</strong>
-            <div class="ip-range">
-              <p class="range-text">
-                <code class="ip-start">${data.rangoInicio}</code>
-                <span class="range-separator">—</span>
-                <code class="ip-end">${data.rangoFin}</code>
-              </p>
-              <p class="hosts-available">
-                <i class="fas fa-check-circle"></i>
-                <strong>${data.hostsDisponibles}</strong> hosts disponibles
-                <span class="efficiency">(${data.totalHosts} necesarios)</span>
-              </p>
+          
+          <div class="summary-card">
+            <div class="summary-icon efficiency-${this.getGeneralEfficiencyClass(data.subredes.eficienciaGeneral)}">
+              <i class="fas fa-chart-pie"></i>
             </div>
+            <div class="summary-info">
+              <h4>Eficiencia</h4>
+              <p><strong>${data.subredes.eficienciaGeneral}%</strong> general</p>
+              <small>${data.subredes.espacioUtilizado}% del espacio usado</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="subnets-container">
+          <h4><i class="fas fa-list"></i> Configuración de Subredes</h4>
+          <div class="subnets-grid">
+            ${subnetCards}
           </div>
         </div>
 
@@ -277,20 +391,25 @@ class CalculadoraSubred {
             <i class="fas fa-clock"></i>
             Calculado el ${data.calculatedAt}
           </div>
-          <div class="efficiency-indicator ${this.getEfficiencyClass(data.totalHosts, data.hostsDisponibles)}">
-            <i class="fas fa-chart-pie"></i>
-            Eficiencia: ${Math.round((data.totalHosts / data.hostsDisponibles) * 100)}%
+          <div class="space-usage">
+            <i class="fas fa-hdd"></i>
+            Espacio restante: ${data.subredes.availableSpace} direcciones
           </div>
         </div>
       </div>
     `;
   }
 
-  getEfficiencyClass(needed, available) {
-    const efficiency = (needed / available) * 100;
-    if (efficiency >= 75) return 'efficiency-high';
-    if (efficiency >= 50) return 'efficiency-medium';
-    return 'efficiency-low';
+  getSubnetEfficiencyClass(efficiency) {
+    if (efficiency >= 75) return 'subnet-high-efficiency';
+    if (efficiency >= 50) return 'subnet-medium-efficiency';
+    return 'subnet-low-efficiency';
+  }
+
+  getGeneralEfficiencyClass(efficiency) {
+    if (efficiency >= 75) return 'high';
+    if (efficiency >= 50) return 'medium';
+    return 'low';
   }
 
   showError(message) {
